@@ -10,9 +10,12 @@
 <meta property="og:description" content="Director | Customer Engineering, Product Strategy & Revenue">
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="apple-mobile-web-app-title" content="Pravin">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="My Card">
 <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMzIiIGZpbGw9IiMxQzFDMUUiLz48dGV4dCB4PSIzMiIgeT0iNDMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJIZWx2ZXRpY2EsIEFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXdlaWdodD0iNTAwIiBmb250LXNpemU9IjMwIiBmaWxsPSIjRjVGNUY3Ij5QPC90ZXh0Pjwvc3ZnPg==">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <style>
   :root {
     --bg: #000; --surface: #0F0F11; --raised: #17171A; --line: #232327; --line-soft: #1A1A1D;
@@ -50,6 +53,8 @@
   .icon-btn { flex: none; align-self: flex-start; margin-top: 4px; width: 38px; height: 38px; border-radius: 50%;
     border: 1px solid var(--line); background: transparent; color: var(--secondary); display: grid; place-items: center; cursor: pointer;
     transition: background-color .2s var(--ease), color .2s var(--ease); }
+  .icon-btn[hidden] { display: none; }
+  .icon-btn + .icon-btn { margin-left: -6px; }
   .icon-btn:hover { background: var(--raised); color: var(--text); }
   .icon-btn svg { width: 17px; height: 17px; }
 
@@ -155,6 +160,7 @@
         <h1>Pravin</h1>
         <p class="title">Director <span class="sep">|</span> Customer Engineering, Product Strategy &amp; Revenue</p>
       </div>
+      <button class="icon-btn" id="install" type="button" aria-label="Install as app" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg></button>
       <button class="icon-btn" id="share" type="button" aria-label="Share this card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/></svg></button>
     </header>
   </div>
@@ -248,18 +254,38 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
   setMode('contact');
 
   var present = document.getElementById('present');
-  function openPresent() { present.classList.add('on'); document.getElementById('close').focus(); }
-  function closePresent() { present.classList.remove('on'); setMode('contact'); }
+  // Keep the screen awake while the code is being shown
+  var lock = null;
+  function keepAwake() { if ('wakeLock' in navigator) navigator.wakeLock.request('screen').then(function (l) { lock = l; }).catch(function () {}); }
+  function release() { if (lock) { lock.release().catch(function () {}); lock = null; } }
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && present.classList.contains('on')) keepAwake(); });
+  function openPresent() { present.classList.add('on'); document.getElementById('close').focus(); keepAwake(); }
+  function closePresent() { present.classList.remove('on'); setMode('contact'); release(); if (location.hash === '#scan') history.replaceState(null, '', location.pathname + location.search); }
   document.getElementById('qr').addEventListener('click', openPresent);
   document.getElementById('fs').addEventListener('click', openPresent);
   document.getElementById('close').addEventListener('click', closePresent);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePresent(); });
   // Open with #scan (e.g. a home-screen bookmark) to go straight to the full-screen code
+  // Opening the installed app (or any link ending in #scan) goes straight to the full-screen contact code
   if (location.hash === '#scan') openPresent();
+
+  // Offline support
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+
+  // Install button, shown only where the browser supports one-tap install (Android/Chrome/Edge)
+  var deferred = null, installBtn = document.getElementById('install');
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; installBtn.hidden = false; });
+  installBtn.addEventListener('click', function () {
+    if (!deferred) return; deferred.prompt();
+    deferred.userChoice.finally(function () { deferred = null; installBtn.hidden = true; });
+  });
+  window.addEventListener('appinstalled', function () { installBtn.hidden = true; });
 
   var toast = document.getElementById('toast'), tt;
   function notify(msg) { toast.textContent = msg; toast.classList.add('show'); clearTimeout(tt); tt = setTimeout(function () { toast.classList.remove('show'); }, 1800); }
-  var shareUrl = /^https?:$/.test(location.protocol) ? location.href.split('#')[0] : LINKEDIN;
+  var shareUrl = /^https?:$/.test(location.protocol) ? location.origin + location.pathname.replace(/index\.html$/, '') : LINKEDIN;
   function copyLink() {
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(shareUrl).then(function () { notify('Link copied'); }, function () { notify(shareUrl); });
     else notify(shareUrl);
